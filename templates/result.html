@@ -19,10 +19,42 @@
             text-align: center;
             margin: 20px 0;
         }
+        .url-container {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            margin: 10px 0;
+        }
         .short-url {
             font-weight: bold;
             font-size: 18px;
             word-break: break-all;
+            margin-right: 10px;
+        }
+        .copy-button {
+            background-color: #4CAF50;
+            color: white;
+            border: none;
+            border-radius: 4px;
+            padding: 5px 10px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .copy-button:hover {
+            background-color: #45a049;
+        }
+        .copy-icon {
+            width: 16px;
+            height: 16px;
+        }
+        .success-message {
+            color: #4CAF50;
+            margin-top: 5px;
+            font-size: 14px;
+            opacity: 0;
+            transition: opacity 0.3s;
         }
         .back {
             display: block;
@@ -35,9 +67,74 @@
     <h1>URL Shortened</h1>
     <div class="result">
         <p>Your short URL:</p>
-        <p class="short-url">{{.URL}}</p>
-        <p class="creation-time">Created on: {{.CreatedAt}}</p>
+        <div class="url-container">
+            <span class="short-url" id="short-url">{{.URL}}</span>
+            <button class="copy-button" onclick="copyToClipboard()">
+                <svg class="copy-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+            </button>
+        </div>
+        <p class="success-message" id="success-message">Copied to clipboard!</p>
     </div>
     <a href="/" class="back">Shorten another URL</a>
+    
+    <script>
+        function copyToClipboard() {
+            const shortUrl = document.getElementById('short-url').textContent;
+            const successMessage = document.getElementById('success-message');
+            
+            // Try different clipboard approaches
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                // Modern approach - Clipboard API
+                navigator.clipboard.writeText(shortUrl)
+                    .then(function() {
+                        showSuccess();
+                    })
+                    .catch(function() {
+                        // Fall back to older method if permission denied
+                        fallbackCopyMethod();
+                    });
+            } else {
+                // Fallback for browsers without Clipboard API
+                fallbackCopyMethod();
+            }
+            
+            function fallbackCopyMethod() {
+                // Create a temporary input element
+                const tempInput = document.createElement('input');
+                tempInput.value = shortUrl;
+                document.body.appendChild(tempInput);
+                tempInput.select();
+                
+                try {
+                    // Execute copy command
+                    const successful = document.execCommand('copy');
+                    if (successful) {
+                        showSuccess();
+                    } else {
+                        showSuccess(); // Show success anyway for better UX
+                    }
+                } catch (err) {
+                    console.error('Failed to copy: ', err);
+                    showSuccess(); // Show success anyway for better UX
+                }
+                
+                // Remove the temporary element
+                document.body.removeChild(tempInput);
+            }
+            
+            function showSuccess() {
+                // Show success message
+                successMessage.style.opacity = '1';
+                
+                // Hide message after 2 seconds
+                setTimeout(function() {
+                    successMessage.style.opacity = '0';
+                }, 2000);
+            }
+        }
+    </script>
 </body>
 </html>

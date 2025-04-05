@@ -237,14 +237,12 @@ func shortenHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return the short URL and creation time
+	// Return just the short URL (timestamp removed)
 	fullShortURL := fmt.Sprintf("http://%s/%s", r.Host, shortURL)
 	data := struct {
-		URL       string
-		CreatedAt string
+		URL string
 	}{
-		URL:       fullShortURL,
-		CreatedAt: now.Format("Jan 02, 2006 at 15:04:05"),
+		URL: fullShortURL,
 	}
 	templates.ExecuteTemplate(w, "result.html", data)
 }
