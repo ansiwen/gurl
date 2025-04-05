@@ -20,6 +20,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/mojocn/base64Captcha"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -36,6 +37,9 @@ var (
 	// For tracking accessed URLs
 	accessedURLs     = make(map[string]time.Time)
 	accessedURLsMu   sync.Mutex
+	
+	// Configure store for captcha
+	captchaStore = base64Captcha.DefaultMemStore
 )
 
 func init() {
@@ -156,9 +160,17 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	}
 	
 	// Generate a captcha
-	captcha := GenerateCaptcha()
+	captchaId, captchaB64 := GenerateCaptcha()
 	
-	templates.ExecuteTemplate(w, "index.html", captcha)
+	data := struct {
+		CaptchaId string
+		CaptchaB64 template.URL
+	}{
+		CaptchaId: captchaId,
+		CaptchaB64: template.URL(captchaB64),
+	}
+	
+	templates.ExecuteTemplate(w, "index.html", data)
 }
 
 // Handler for creating a short URL
@@ -182,9 +194,9 @@ func shortenHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify CAPTCHA
-	captchaToken := r.FormValue("captcha_token")
-	captchaAnswer := r.FormValue("captcha_answer")
-	if !verifyCaptcha(captchaToken, captchaAnswer) {
+	captchaId := r.FormValue("captcha_id")
+	captchaSolution := r.FormValue("captcha_solution")
+	if !captchaStore.Verify(captchaId, captchaSolution, true) {
 		http.Error(w, "CAPTCHA verification failed", http.StatusBadRequest)
 		return
 	}
@@ -288,78 +300,24 @@ func handleRedirect(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, longURL, http.StatusFound)
 }
 
-// SimpleCaptcha represents a simple math-based captcha
-type SimpleCaptcha struct {
-	Question string
-	Answer   string
-	Token    string // For CSRF protection
-}
-
-// GenerateCaptcha creates a simple math-based captcha
-func GenerateCaptcha() SimpleCaptcha {
-	// Generate two random numbers between 1 and 10
-	a := rand.Intn(10) + 1
-	b := rand.Intn(10) + 1
+// GenerateCaptcha creates an image-based captcha
+func GenerateCaptcha() (string, string) {
+	// Configure the captcha
+	driverDigit := base64Captcha.NewDriverDigit(70, 180, 5, 0.7, 80)
 	
-	// Create a token that will be used to validate the captcha
-	tokenBytes := make([]byte, 16)
-	cryptoRand.Read(tokenBytes)
-	token := hex.EncodeToString(tokenBytes)
-	
-	// Store the correct answer with the token in a secure way
-	// In a real application, you'd want to use a time-limited cache or Redis
-	answerKey := sha256.Sum256([]byte(token + "captcha-salt"))
-	answerKeyStr := hex.EncodeToString(answerKey[:])
-	storeAnswer(answerKeyStr, fmt.Sprintf("%d", a+b))
-	
-	return SimpleCaptcha{
-		Question: fmt.Sprintf("What is %d + %d?", a, b),
-		Answer:   "",  // This will be filled by the user
-		Token:    token,
-	}
-}
-
-// Map to store captcha answers (in a real application, use a time-limited cache)
-var (
-	captchaAnswers = make(map[string]string)
-	captchaMu      sync.Mutex
-)
-
-// Store an answer
-func storeAnswer(key, answer string) {
-	captchaMu.Lock()
-	defer captchaMu.Unlock()
-	captchaAnswers[key] = answer
-	
-	// Set up a cleanup after 10 minutes
-	go func(k string) {
-		time.Sleep(10 * time.Minute)
-		captchaMu.Lock()
-		delete(captchaAnswers, k)
-		captchaMu.Unlock()
-	}(key)
-}
-
-// Verify a captcha response
-func verifyCaptcha(token, userAnswer string) bool {
-	// Regenerate the key
-	answerKey := sha256.Sum256([]byte(token + "captcha-salt"))
-	answerKeyStr := hex.EncodeToString(answerKey[:])
-	
-	captchaMu.Lock()
-	defer captchaMu.Unlock()
-	
-	// Check if we have this token
-	correctAnswer, exists := captchaAnswers[answerKeyStr]
-	if !exists {
-		return false
+	// Create the captcha and get the ID and base64 encoded PNG
+	captcha := base64Captcha.NewCaptcha(driverDigit, captchaStore)
+	id, b64s, answer, err := captcha.Generate()
+	if err != nil {
+		log.Printf("Error generating captcha: %v", err)
+		// Fallback to a simple system if necessary
+		return "", ""
 	}
 	
-	// Check the answer and remove the token (one-time use)
-	isCorrect := correctAnswer == userAnswer
-	delete(captchaAnswers, answerKeyStr)
+	// Store the answer
+	captchaStore.Set(id, answer)
 	
-	return isCorrect
+	return id, b64s
 }
 
 // Updates last_used timestamps in batches

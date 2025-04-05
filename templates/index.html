@@ -39,8 +39,20 @@
             border-radius: 5px;
             margin: 10px 0;
         }
+        .captcha-img {
+            margin-bottom: 10px;
+            display: block;
+        }
         .honeypot {
             display: none; /* Hide this field from humans */
+        }
+        .refresh-captcha {
+            background-color: #f0f0f0;
+            border: 1px solid #ccc;
+            padding: 5px 10px;
+            font-size: 12px;
+            cursor: pointer;
+            margin-left: 10px;
         }
     </style>
 </head>
@@ -50,11 +62,17 @@
         <label for="url">Enter a URL to shorten:</label>
         <input type="url" id="url" name="url" placeholder="https://example.com" required>
         
-        <!-- Simple math CAPTCHA -->
+        <!-- Image CAPTCHA -->
         <div class="captcha">
-            <label for="captcha_answer">{{.Question}}</label>
-            <input type="text" id="captcha_answer" name="captcha_answer" required>
-            <input type="hidden" name="captcha_token" value="{{.Token}}">
+            <label for="captcha_solution">Please enter the characters you see:</label>
+            <div>
+                <img class="captcha-img" src="{{.CaptchaB64}}" alt="CAPTCHA image">
+            </div>
+            <div>
+                <input type="text" id="captcha_solution" name="captcha_solution" required>
+                <input type="hidden" name="captcha_id" value="{{.CaptchaId}}">
+                <button type="button" class="refresh-captcha" onclick="window.location.reload()">New CAPTCHA</button>
+            </div>
         </div>
         
         <!-- Honeypot field - should stay empty -->
