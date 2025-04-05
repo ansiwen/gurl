@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>URL Shortened</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 600px;
+            margin: 0 auto;
+            padding: 20px;
+        }
+        h1 {
+            text-align: center;
+        }
+        .result {
+            padding: 20px;
+            background-color: #f0f0f0;
+            border-radius: 5px;
+            text-align: center;
+            margin: 20px 0;
+        }
+        .short-url {
+            font-weight: bold;
+            font-size: 18px;
+            word-break: break-all;
+        }
+        .back {
+            display: block;
+            text-align: center;
+            margin-top: 20px;
+        }
+    </style>
+</head>
+<body>
+    <h1>URL Shortened</h1>
+    <div class="result">
+        <p>Your short URL:</p>
+        <p class="short-url">{{.URL}}</p>
+        <p class="creation-time">Created on: {{.CreatedAt}}</p>
+    </div>
+    <a href="/" class="back">Shorten another URL</a>
+</body>
+</html>
