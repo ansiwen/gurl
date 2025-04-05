@@ -3,7 +3,7 @@ package main
 import (
 	"crypto/aes"
 	"crypto/cipher"
-	"crypto/rand"
+	cryptoRand "crypto/rand"
 	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
@@ -13,7 +13,9 @@ import (
 	"html/template"
 	"io"
 	"log"
+	"math/rand"
 	"net/http"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -38,6 +40,9 @@ var (
 
 func init() {
 	var err error
+
+	// Initialize random number generator
+	rand.Seed(time.Now().UnixNano())
 
 	// Connect to SQLite database
 	db, err = sql.Open("sqlite3", dbPath)
@@ -69,7 +74,7 @@ func init() {
 func generateShortURL() (string, error) {
 	// Generate 16 random bytes (128 bits)
 	randomBytes := make([]byte, 16)
-	_, err := rand.Read(randomBytes)
+	_, err := cryptoRand.Read(randomBytes)
 	if err != nil {
 		return "", err
 	}
@@ -105,7 +110,7 @@ func encryptURL(url string, key []byte) ([]byte, error) {
 
 	// Generate a nonce
 	nonce := make([]byte, aesGCM.NonceSize())
-	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
+	if _, err := io.ReadFull(cryptoRand.Reader, nonce); err != nil {
 		return nil, err
 	}
 
@@ -149,8 +154,11 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		handleRedirect(w, r)
 		return
 	}
-
-	templates.ExecuteTemplate(w, "index.html", nil)
+	
+	// Generate a captcha
+	captcha := GenerateCaptcha()
+	
+	templates.ExecuteTemplate(w, "index.html", captcha)
 }
 
 // Handler for creating a short URL
@@ -174,10 +182,32 @@ func shortenHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify CAPTCHA
-	captchaResponse := r.FormValue("g-recaptcha-response")
-	if !verifyCaptcha(captchaResponse) {
+	captchaToken := r.FormValue("captcha_token")
+	captchaAnswer := r.FormValue("captcha_answer")
+	if !verifyCaptcha(captchaToken, captchaAnswer) {
 		http.Error(w, "CAPTCHA verification failed", http.StatusBadRequest)
 		return
+	}
+	
+	// Check honeypot field - should be empty
+	honeypot := r.FormValue("website")
+	if honeypot != "" {
+		// This is likely a bot, but we'll redirect to the home page instead of showing an error
+		http.Redirect(w, r, "/", http.StatusSeeOther)
+		return
+	}
+	
+	// Check submission time
+	formTimeStr := r.FormValue("form_time")
+	formTime, err := strconv.ParseInt(formTimeStr, 10, 64)
+	if err == nil {
+		elapsed := time.Now().UnixMilli() - formTime
+		// If form was submitted in less than 2 seconds, it's suspicious
+		if elapsed < 2000 {
+			log.Printf("Suspicious submission: completed too quickly (%d ms)", elapsed)
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
 	}
 
 	// Generate a short URL
@@ -260,12 +290,78 @@ func handleRedirect(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, longURL, http.StatusFound)
 }
 
-// Verify CAPTCHA response
-// Note: In production, this should call the actual reCAPTCHA API
-func verifyCaptcha(response string) bool {
-	// In a real implementation, verify with Google's reCAPTCHA API
-	// For simplicity, we're just checking if response exists
-	return response != ""
+// SimpleCaptcha represents a simple math-based captcha
+type SimpleCaptcha struct {
+	Question string
+	Answer   string
+	Token    string // For CSRF protection
+}
+
+// GenerateCaptcha creates a simple math-based captcha
+func GenerateCaptcha() SimpleCaptcha {
+	// Generate two random numbers between 1 and 10
+	a := rand.Intn(10) + 1
+	b := rand.Intn(10) + 1
+	
+	// Create a token that will be used to validate the captcha
+	tokenBytes := make([]byte, 16)
+	cryptoRand.Read(tokenBytes)
+	token := hex.EncodeToString(tokenBytes)
+	
+	// Store the correct answer with the token in a secure way
+	// In a real application, you'd want to use a time-limited cache or Redis
+	answerKey := sha256.Sum256([]byte(token + "captcha-salt"))
+	answerKeyStr := hex.EncodeToString(answerKey[:])
+	storeAnswer(answerKeyStr, fmt.Sprintf("%d", a+b))
+	
+	return SimpleCaptcha{
+		Question: fmt.Sprintf("What is %d + %d?", a, b),
+		Answer:   "",  // This will be filled by the user
+		Token:    token,
+	}
+}
+
+// Map to store captcha answers (in a real application, use a time-limited cache)
+var (
+	captchaAnswers = make(map[string]string)
+	captchaMu      sync.Mutex
+)
+
+// Store an answer
+func storeAnswer(key, answer string) {
+	captchaMu.Lock()
+	defer captchaMu.Unlock()
+	captchaAnswers[key] = answer
+	
+	// Set up a cleanup after 10 minutes
+	go func(k string) {
+		time.Sleep(10 * time.Minute)
+		captchaMu.Lock()
+		delete(captchaAnswers, k)
+		captchaMu.Unlock()
+	}(key)
+}
+
+// Verify a captcha response
+func verifyCaptcha(token, userAnswer string) bool {
+	// Regenerate the key
+	answerKey := sha256.Sum256([]byte(token + "captcha-salt"))
+	answerKeyStr := hex.EncodeToString(answerKey[:])
+	
+	captchaMu.Lock()
+	defer captchaMu.Unlock()
+	
+	// Check if we have this token
+	correctAnswer, exists := captchaAnswers[answerKeyStr]
+	if !exists {
+		return false
+	}
+	
+	// Check the answer and remove the token (one-time use)
+	isCorrect := correctAnswer == userAnswer
+	delete(captchaAnswers, answerKeyStr)
+	
+	return isCorrect
 }
 
 // Updates last_used timestamps in batches

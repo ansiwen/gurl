@@ -21,6 +21,10 @@
             padding: 8px;
             font-size: 16px;
         }
+        input[type="text"] {
+            padding: 8px;
+            font-size: 16px;
+        }
         button {
             padding: 10px;
             background-color: #4CAF50;
@@ -29,19 +33,45 @@
             cursor: pointer;
             font-size: 16px;
         }
-        .g-recaptcha {
+        .captcha {
+            background-color: #f8f8f8;
+            padding: 15px;
+            border-radius: 5px;
             margin: 10px 0;
         }
+        .honeypot {
+            display: none; /* Hide this field from humans */
+        }
     </style>
-    <script src="https://www.google.com/recaptcha/api.js" async defer></script>
 </head>
 <body>
     <h1>URL Shortener</h1>
     <form action="/shorten" method="post">
         <label for="url">Enter a URL to shorten:</label>
         <input type="url" id="url" name="url" placeholder="https://example.com" required>
-        <div class="g-recaptcha" data-sitekey="YOUR_RECAPTCHA_SITE_KEY"></div>
+        
+        <!-- Simple math CAPTCHA -->
+        <div class="captcha">
+            <label for="captcha_answer">{{.Question}}</label>
+            <input type="text" id="captcha_answer" name="captcha_answer" required>
+            <input type="hidden" name="captcha_token" value="{{.Token}}">
+        </div>
+        
+        <!-- Honeypot field - should stay empty -->
+        <div class="honeypot">
+            <label for="website">Website (leave this empty):</label>
+            <input type="text" id="website" name="website">
+        </div>
+        
+        <!-- Time-based check -->
+        <input type="hidden" name="form_time" value="" id="form_time">
+        
         <button type="submit">Shorten</button>
     </form>
+    
+    <script>
+        // Set the form time when the page loads
+        document.getElementById('form_time').value = Date.now();
+    </script>
 </body>
 </html>
