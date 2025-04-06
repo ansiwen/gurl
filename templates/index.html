@@ -47,7 +47,7 @@
             display: none; /* Hide this field from humans */
         }
         .refresh-captcha {
-            background-color: #f0f0f0;
+            background-color: #7070c0;
             border: 1px solid #ccc;
             padding: 5px 10px;
             font-size: 12px;
@@ -61,7 +61,7 @@
     <form action="/shorten" method="post">
         <label for="url">Enter a URL to shorten:</label>
         <input type="url" id="url" name="url" placeholder="https://example.com" required>
-        
+
         <!-- Image CAPTCHA -->
         <div class="captcha">
             <label for="captcha_solution">Please enter the characters you see:</label>
@@ -70,23 +70,23 @@
             </div>
             <div>
                 <input type="text" id="captcha_solution" name="captcha_solution" required>
-                <input type="hidden" name="captcha_id" value="{{.CaptchaId}}">
+                <input type="hidden" name="captcha_id" value="{{.CaptchaID}}">
                 <button type="button" class="refresh-captcha" onclick="window.location.reload()">New CAPTCHA</button>
             </div>
         </div>
-        
+
         <!-- Honeypot field - should stay empty -->
         <div class="honeypot">
             <label for="website">Website (leave this empty):</label>
             <input type="text" id="website" name="website">
         </div>
-        
+
         <!-- Time-based check -->
         <input type="hidden" name="form_time" value="" id="form_time">
-        
+
         <button type="submit">Shorten</button>
     </form>
-    
+
     <script>
         // Set the form time when the page loads
         document.getElementById('form_time').value = Date.now();

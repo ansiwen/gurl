@@ -3,49 +3,46 @@ package main
 import (
 	"crypto/aes"
 	"crypto/cipher"
-	cryptoRand "crypto/rand"
+	"crypto/rand"
 	"crypto/sha256"
 	"database/sql"
+	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"html/template"
 	"io"
 	"log"
-	"math/rand"
 	"net/http"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
 
-	"github.com/mojocn/base64Captcha"
 	_ "github.com/mattn/go-sqlite3"
+	"github.com/mojocn/base64Captcha"
 )
 
 const (
 	dbPath         = "./shortener.db"
-	maxURLLength   = 2048           // A reasonable limit for URLs
-	updateInterval = time.Minute    // Batch update interval for last_used timestamps
+	maxURLLength   = 4096        // A reasonable limit for URLs
+	updateInterval = time.Minute // Batch update interval for last_used timestamps
 )
 
 var (
-	db *sql.DB
+	db        *sql.DB
 	templates *template.Template
-	
+
 	// For tracking accessed URLs
-	accessedURLs     = make(map[string]time.Time)
-	accessedURLsMu   sync.Mutex
-	
+	accessedURLs   = make(map[string]time.Time)
+	accessedURLsMu sync.Mutex
+
 	// Configure store for captcha
 	captchaStore = base64Captcha.DefaultMemStore
 )
 
 func init() {
 	var err error
-
-	// Initialize random number generator
-	rand.Seed(time.Now().UnixNano())
 
 	// Connect to SQLite database
 	db, err = sql.Open("sqlite3", dbPath)
@@ -73,33 +70,19 @@ func init() {
 	}
 }
 
-// Generate a short URL with 64 bits of entropy encoded as 10 Base85 characters
+// Generate a short URL with 6 random bytes (48 bits of entropy)
+// which results in 8 base64 characters
 func generateShortURL() (string, error) {
-	// Define custom Base85 alphabet
-	// a-z, A-Z, 0-9 and $-_.+!*(),&;/?:@={}^~[]
-	const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$-_.+!*(),&;/?:@={}^~[]"
-	
-	// Generate 8 random bytes (64 bits)
-	randomBytes := make([]byte, 8)
-	_, err := cryptoRand.Read(randomBytes)
+	// Generate 6 random bytes (48 bits)
+	randomBytes := make([]byte, 6)
+	_, err := rand.Read(randomBytes)
 	if err != nil {
 		return "", err
 	}
-	
-	// Convert bytes to a 64-bit integer for encoding
-	var intValue uint64
-	for _, b := range randomBytes {
-		intValue = (intValue << 8) | uint64(b)
-	}
-	
-	// Custom Base85 encoding
-	var result [10]byte
-	for i := 9; i >= 0; i-- {
-		result[i] = alphabet[intValue%85]
-		intValue /= 85
-	}
-	
-	return string(result[:]), nil
+
+	// Encode to URL-safe base64
+	shortURL := base64.RawURLEncoding.EncodeToString(randomBytes)
+	return shortURL, nil
 }
 
 // Derive lookup key from short URL using tagged SHA-256
@@ -128,7 +111,7 @@ func encryptURL(url string, key []byte) ([]byte, error) {
 
 	// Generate a nonce
 	nonce := make([]byte, aesGCM.NonceSize())
-	if _, err := io.ReadFull(cryptoRand.Reader, nonce); err != nil {
+	if _, err := io.ReadFull(rand.Reader, nonce); err != nil {
 		return nil, err
 	}
 
@@ -172,18 +155,18 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		handleRedirect(w, r)
 		return
 	}
-	
+
 	// Generate a captcha
-	captchaId, captchaB64 := GenerateCaptcha()
-	
+	captchaID, captchaB64 := GenerateCaptcha()
+
 	data := struct {
-		CaptchaId string
+		CaptchaID  string
 		CaptchaB64 template.URL
 	}{
-		CaptchaId: captchaId,
+		CaptchaID:  captchaID,
 		CaptchaB64: template.URL(captchaB64),
 	}
-	
+
 	templates.ExecuteTemplate(w, "index.html", data)
 }
 
@@ -208,13 +191,13 @@ func shortenHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Verify CAPTCHA
-	captchaId := r.FormValue("captcha_id")
+	captchaID := r.FormValue("captcha_id")
 	captchaSolution := r.FormValue("captcha_solution")
-	if !captchaStore.Verify(captchaId, captchaSolution, true) {
+	if !captchaStore.Verify(captchaID, captchaSolution, true) {
 		http.Error(w, "CAPTCHA verification failed", http.StatusBadRequest)
 		return
 	}
-	
+
 	// Check honeypot field - should be empty
 	honeypot := r.FormValue("website")
 	if honeypot != "" {
@@ -222,7 +205,7 @@ func shortenHandler(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/", http.StatusSeeOther)
 		return
 	}
-	
+
 	// Check submission time
 	formTimeStr := r.FormValue("form_time")
 	formTime, err := strconv.ParseInt(formTimeStr, 10, 64)
@@ -256,15 +239,15 @@ func shortenHandler(w http.ResponseWriter, r *http.Request) {
 
 	// Store in database with creation timestamp
 	now := time.Now()
-	_, err = db.Exec("INSERT INTO urls (lookup_key, encrypted_url, created_at) VALUES (?, ?, ?)", 
+	_, err = db.Exec("INSERT INTO urls (lookup_key, encrypted_url, created_at) VALUES (?, ?, ?)",
 		lookupKey, encryptedURL, now)
 	if err != nil {
 		http.Error(w, "Error storing URL", http.StatusInternalServerError)
 		return
 	}
 
-	// Return just the short URL (timestamp removed)
-	fullShortURL := fmt.Sprintf("http://%s/%s", r.Host, shortURL)
+	// Return the short URL
+	fullShortURL := fmt.Sprintf("https://%s/%s", r.Host, shortURL)
 	data := struct {
 		URL string
 	}{
@@ -297,7 +280,7 @@ func handleRedirect(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "Database error", http.StatusInternalServerError)
 		return
 	}
-	
+
 	// Record this access for batch update
 	accessedURLsMu.Lock()
 	accessedURLs[lookupKey] = time.Now()
@@ -318,7 +301,7 @@ func handleRedirect(w http.ResponseWriter, r *http.Request) {
 func GenerateCaptcha() (string, string) {
 	// Configure the captcha
 	driverDigit := base64Captcha.NewDriverDigit(70, 180, 5, 0.7, 80)
-	
+
 	// Create the captcha and get the ID and base64 encoded PNG
 	captcha := base64Captcha.NewCaptcha(driverDigit, captchaStore)
 	id, b64s, answer, err := captcha.Generate()
@@ -327,10 +310,10 @@ func GenerateCaptcha() (string, string) {
 		// Fallback to a simple system if necessary
 		return "", ""
 	}
-	
+
 	// Store the answer
 	captchaStore.Set(id, answer)
-	
+
 	return id, b64s
 }
 
@@ -347,25 +330,22 @@ func startTimestampUpdater() {
 // Perform the batch update of last_used timestamps
 func updateTimestamps() {
 	accessedURLsMu.Lock()
-	urls := make(map[string]time.Time)
-	for k, v := range accessedURLs {
-		urls[k] = v
-	}
+	urls := accessedURLs
 	// Clear the map for next batch
 	accessedURLs = make(map[string]time.Time)
 	accessedURLsMu.Unlock()
-	
+
 	if len(urls) == 0 {
 		return // Nothing to update
 	}
-	
+
 	// Begin a transaction for the batch update
 	tx, err := db.Begin()
 	if err != nil {
 		log.Printf("Error starting transaction for timestamp updates: %v", err)
 		return
 	}
-	
+
 	stmt, err := tx.Prepare("UPDATE urls SET last_used_at = ? WHERE lookup_key = ?")
 	if err != nil {
 		log.Printf("Error preparing timestamp update statement: %v", err)
@@ -373,7 +353,7 @@ func updateTimestamps() {
 		return
 	}
 	defer stmt.Close()
-	
+
 	for key, timestamp := range urls {
 		_, err := stmt.Exec(timestamp, key)
 		if err != nil {
@@ -381,14 +361,14 @@ func updateTimestamps() {
 			// Continue with other updates
 		}
 	}
-	
+
 	err = tx.Commit()
 	if err != nil {
 		log.Printf("Error committing timestamp updates: %v", err)
 		tx.Rollback()
 		return
 	}
-	
+
 	log.Printf("Updated last_used timestamps for %d URLs", len(urls))
 }
 
