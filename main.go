@@ -6,7 +6,6 @@ import (
 	cryptoRand "crypto/rand"
 	"crypto/sha256"
 	"database/sql"
-	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"fmt"
@@ -74,18 +73,33 @@ func init() {
 	}
 }
 
-// Generate a short URL with 128 bits of entropy
+// Generate a short URL with 64 bits of entropy encoded as 10 Base85 characters
 func generateShortURL() (string, error) {
-	// Generate 16 random bytes (128 bits)
-	randomBytes := make([]byte, 16)
+	// Define custom Base85 alphabet
+	// a-z, A-Z, 0-9 and $-_.+!*(),&;/?:@={}^~[]
+	const alphabet = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789$-_.+!*(),&;/?:@={}^~[]"
+	
+	// Generate 8 random bytes (64 bits)
+	randomBytes := make([]byte, 8)
 	_, err := cryptoRand.Read(randomBytes)
 	if err != nil {
 		return "", err
 	}
-
-	// Encode to URL-safe base64
-	shortURL := base64.RawURLEncoding.EncodeToString(randomBytes)
-	return shortURL, nil
+	
+	// Convert bytes to a 64-bit integer for encoding
+	var intValue uint64
+	for _, b := range randomBytes {
+		intValue = (intValue << 8) | uint64(b)
+	}
+	
+	// Custom Base85 encoding
+	var result [10]byte
+	for i := 9; i >= 0; i-- {
+		result[i] = alphabet[intValue%85]
+		intValue /= 85
+	}
+	
+	return string(result[:]), nil
 }
 
 // Derive lookup key from short URL using tagged SHA-256
