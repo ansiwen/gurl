@@ -167,7 +167,12 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 		CaptchaB64: template.URL(captchaB64),
 	}
 
-	templates.ExecuteTemplate(w, "index.html", data)
+	err := templates.ExecuteTemplate(w, "index.html", data)
+	if err != nil {
+		http.Error(w, "Error processing template", http.StatusInternalServerError)
+		log.Printf("Error processing template: %v", err)
+		return
+	}
 }
 
 // Handler for creating a short URL
@@ -223,6 +228,7 @@ func shortenHandler(w http.ResponseWriter, r *http.Request) {
 	shortURL, err := generateShortURL()
 	if err != nil {
 		http.Error(w, "Error generating short URL", http.StatusInternalServerError)
+		log.Printf("Error generating short URL: %v", err)
 		return
 	}
 
@@ -234,6 +240,7 @@ func shortenHandler(w http.ResponseWriter, r *http.Request) {
 	encryptedURL, err := encryptURL(longURL, encryptionKey)
 	if err != nil {
 		http.Error(w, "Error encrypting URL", http.StatusInternalServerError)
+		log.Printf("Error encrypting URL: %v", err)
 		return
 	}
 
@@ -243,6 +250,7 @@ func shortenHandler(w http.ResponseWriter, r *http.Request) {
 		lookupKey, encryptedURL, now)
 	if err != nil {
 		http.Error(w, "Error storing URL", http.StatusInternalServerError)
+		log.Printf("Error storing URL: %v", err)
 		return
 	}
 
@@ -253,7 +261,12 @@ func shortenHandler(w http.ResponseWriter, r *http.Request) {
 	}{
 		URL: fullShortURL,
 	}
-	templates.ExecuteTemplate(w, "result.html", data)
+	err = templates.ExecuteTemplate(w, "result.html", data)
+	if err != nil {
+		http.Error(w, "Error processing template", http.StatusInternalServerError)
+		log.Printf("Error processing template: %v", err)
+		return
+	}
 }
 
 // Handler for redirecting short URLs
@@ -278,6 +291,7 @@ func handleRedirect(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		http.Error(w, "Database error", http.StatusInternalServerError)
+		log.Printf("Database error: %v", err)
 		return
 	}
 
@@ -290,6 +304,7 @@ func handleRedirect(w http.ResponseWriter, r *http.Request) {
 	longURL, err := decryptURL(encryptedURL, encryptionKey)
 	if err != nil {
 		http.Error(w, "Error decrypting URL", http.StatusInternalServerError)
+		log.Printf("Error decrypting URL: %v", err)
 		return
 	}
 
