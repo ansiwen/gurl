@@ -68,7 +68,7 @@
     <div class="result">
         <p>Your short URL:</p>
         <div class="url-container">
-            <span class="short-url" id="short-url">{{.URL}}</span>
+            <span class="short-url" id="short-url"><a href="{{.URL}}">{{.URL}}</a></span>
             <button class="copy-button" onclick="copyToClipboard()">
                 <svg class="copy-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
@@ -79,12 +79,12 @@
         <p class="success-message" id="success-message">Copied to clipboard!</p>
     </div>
     <a href="/" class="back">Shorten another URL</a>
-    
+
     <script>
         function copyToClipboard() {
             const shortUrl = document.getElementById('short-url').textContent;
             const successMessage = document.getElementById('success-message');
-            
+
             // Try different clipboard approaches
             if (navigator.clipboard && navigator.clipboard.writeText) {
                 // Modern approach - Clipboard API
@@ -100,14 +100,14 @@
                 // Fallback for browsers without Clipboard API
                 fallbackCopyMethod();
             }
-            
+
             function fallbackCopyMethod() {
                 // Create a temporary input element
                 const tempInput = document.createElement('input');
                 tempInput.value = shortUrl;
                 document.body.appendChild(tempInput);
                 tempInput.select();
-                
+
                 try {
                     // Execute copy command
                     const successful = document.execCommand('copy');
@@ -120,15 +120,15 @@
                     console.error('Failed to copy: ', err);
                     showSuccess(); // Show success anyway for better UX
                 }
-                
+
                 // Remove the temporary element
                 document.body.removeChild(tempInput);
             }
-            
+
             function showSuccess() {
                 // Show success message
                 successMessage.style.opacity = '1';
-                
+
                 // Hide message after 2 seconds
                 setTimeout(function() {
                     successMessage.style.opacity = '0';

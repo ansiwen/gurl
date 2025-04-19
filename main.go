@@ -255,7 +255,7 @@ func shortenHandler(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Return the short URL
-	fullShortURL := fmt.Sprintf("https://%s/%s", r.Host, shortURL)
+	fullShortURL := fmt.Sprintf("%s://%s/%s", r.URL.Scheme, r.Host, shortURL)
 	data := struct {
 		URL string
 	}{
