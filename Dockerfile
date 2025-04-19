@@ -14,7 +14,7 @@ RUN go mod download
 COPY main.go ./
 
 # Build the application with CGO enabled (required for sqlite3)
-RUN CGO_ENABLED=1 GOOS=linux go build -o gurl .
+RUN go build -ldflags="-s -w" .
 
 # Stage 2: Create the runtime image
 FROM alpine:latest

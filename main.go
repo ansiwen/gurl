@@ -134,6 +134,11 @@ func decryptURL(encrypted []byte, key []byte) (string, error) {
 
 // Handler for the index page
 func indexHandler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/shorten" && r.Method == "POST" {
+		shortenHandler(w, r)
+		return
+	}
+
 	if r.URL.Path != "/" {
 		handleRedirect(w, r)
 		return
@@ -160,11 +165,6 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 
 // Handler for creating a short URL
 func shortenHandler(w http.ResponseWriter, r *http.Request) {
-	if r.Method != "POST" {
-		http.Error(w, "Method not allowed", http.StatusMethodNotAllowed)
-		return
-	}
-
 	// Get the long URL from the form
 	longURL := r.FormValue("url")
 	if longURL == "" {
@@ -429,7 +429,6 @@ func main() {
 
 	// Set up routes
 	http.HandleFunc("/", indexHandler)
-	http.HandleFunc("/shorten", shortenHandler)
 
 	// Start server
 	log.Printf("Starting server on %s", listenAddr)
