@@ -250,7 +250,15 @@ func shortenHandler(w http.ResponseWriter, r *http.Request) {
 		} else if r.TLS != nil {
 			scheme = "https"
 		}
-		fullShortURL = fmt.Sprintf("%s://%s/%s", scheme, r.Host, shortURL)
+
+		// Check for X-Forwarded-Host header to determine actual host
+		host := r.Host
+		forwardedHost := r.Header.Get("X-Forwarded-Host")
+		if forwardedHost != "" {
+			host = forwardedHost
+		}
+
+		fullShortURL = fmt.Sprintf("%s://%s/%s", scheme, host, shortURL)
 	}
 
 	data := struct {
