@@ -134,6 +134,11 @@ func decryptURL(encrypted []byte, key []byte) (string, error) {
 
 // Handler for the index page
 func indexHandler(w http.ResponseWriter, r *http.Request) {
+	if r.URL.Path == "/shorten" && r.Method == "POST" {
+		shortenHandler(w, r)
+		return
+	}
+
 	if r.URL.Path != "/" {
 		handleRedirect(w, r)
 		return
@@ -429,7 +434,6 @@ func main() {
 
 	// Set up routes
 	http.HandleFunc("/", indexHandler)
-	http.HandleFunc("/shorten", shortenHandler)
 
 	// Start server
 	log.Printf("Starting server on %s", listenAddr)
