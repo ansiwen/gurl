@@ -87,6 +87,14 @@
         <button type="submit">Shorten</button>
     </form>
 
+    <p>This is a simple URL shortener, that stores all data encrypted in the
+    database where the short URL acts as the 48 bit key. This is not a strong
+    encryption, so <b>don't put secrets into the URL</b> that you want to
+    shorten. It is rather a privacy feature, so that the data is encrypted at
+    rest. The source code can be found <a
+    href="https://github.com/ansiwen/gurl">here</a>.
+    </p>
+
     <script>
         // Set the form time when the page loads
         document.getElementById('form_time').value = Date.now();
