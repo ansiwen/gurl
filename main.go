@@ -9,6 +9,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
+	"flag"
 	"fmt"
 	"html/template"
 	"io"
@@ -24,12 +25,16 @@ import (
 )
 
 const (
-	dbPath         = "./shortener.db"
 	maxURLLength   = 4096        // A reasonable limit for URLs
 	updateInterval = time.Minute // Batch update interval for last_used timestamps
 )
 
 var (
+	// Command line arguments
+	dbPath     string
+	listenAddr string
+	urlPrefix  string
+
 	db        *sql.DB
 	templates *template.Template
 
@@ -42,32 +47,10 @@ var (
 )
 
 func init() {
-	var err error
-
-	// Connect to SQLite database
-	db, err = sql.Open("sqlite3", dbPath)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Create table if not exists
-	_, err = db.Exec(`
-		CREATE TABLE IF NOT EXISTS urls (
-			lookup_key TEXT PRIMARY KEY,
-			encrypted_url BLOB,
-			created_at TIMESTAMP NOT NULL,
-			last_used_at TIMESTAMP
-		)
-	`)
-	if err != nil {
-		log.Fatal(err)
-	}
-
-	// Load HTML templates
-	templates, err = template.ParseGlob("templates/*.html")
-	if err != nil {
-		log.Fatal(err)
-	}
+	// Define command line flags
+	flag.StringVar(&dbPath, "db", "./shortener.db", "Path to SQLite database file")
+	flag.StringVar(&listenAddr, "addr", ":8080", "Address and port to listen on (e.g., :8080)")
+	flag.StringVar(&urlPrefix, "prefix", "", "URL prefix for shortened URLs (e.g., https://short.example.com)")
 }
 
 // Generate a short URL with 6 random bytes (48 bits of entropy)
@@ -254,8 +237,22 @@ func shortenHandler(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return the short URL
-	fullShortURL := fmt.Sprintf("%s://%s/%s", r.URL.Scheme, r.Host, shortURL)
+	// Return the short URL with the configured prefix or use the request host if no prefix is set
+	var fullShortURL string
+	if urlPrefix != "" {
+		fullShortURL = fmt.Sprintf("%s/%s", strings.TrimRight(urlPrefix, "/"), shortURL)
+	} else {
+		// Check for X-Forwarded-Proto header to determine actual scheme
+		scheme := "http"
+		forwardedProto := r.Header.Get("X-Forwarded-Proto")
+		if forwardedProto != "" {
+			scheme = forwardedProto
+		} else if r.TLS != nil {
+			scheme = "https"
+		}
+		fullShortURL = fmt.Sprintf("%s://%s/%s", scheme, r.Host, shortURL)
+	}
+
 	data := struct {
 		URL string
 	}{
@@ -388,7 +385,36 @@ func updateTimestamps() {
 }
 
 func main() {
+	// Parse command line flags
+	flag.Parse()
+
+	var err error
+
+	// Connect to SQLite database
+	db, err = sql.Open("sqlite3", dbPath)
+	if err != nil {
+		log.Fatal(err)
+	}
 	defer db.Close()
+
+	// Create table if not exists
+	_, err = db.Exec(`
+		CREATE TABLE IF NOT EXISTS urls (
+			lookup_key TEXT PRIMARY KEY,
+			encrypted_url BLOB,
+			created_at TIMESTAMP NOT NULL,
+			last_used_at TIMESTAMP
+		)
+	`)
+	if err != nil {
+		log.Fatal(err)
+	}
+
+	// Load HTML templates
+	templates, err = template.ParseGlob("templates/*.html")
+	if err != nil {
+		log.Fatal(err)
+	}
 
 	// Start the timestamp updater
 	startTimestampUpdater()
@@ -398,6 +424,6 @@ func main() {
 	http.HandleFunc("/shorten", shortenHandler)
 
 	// Start server
-	log.Println("Starting server on :8080")
-	log.Fatal(http.ListenAndServe(":8080", nil))
+	log.Printf("Starting server on %s", listenAddr)
+	log.Fatal(http.ListenAndServe(listenAddr, nil))
 }
