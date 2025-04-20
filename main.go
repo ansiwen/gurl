@@ -53,21 +53,6 @@ func init() {
 	flag.StringVar(&urlPrefix, "prefix", "", "URL prefix for shortened URLs (e.g., https://short.example.com)")
 }
 
-// Generate a short URL with 6 random bytes (48 bits of entropy)
-// which results in 8 base64 characters
-func generateShortURL() (string, error) {
-	// Generate 6 random bytes (48 bits)
-	randomBytes := make([]byte, 6)
-	_, err := rand.Read(randomBytes)
-	if err != nil {
-		return "", err
-	}
-
-	// Encode to URL-safe base64
-	shortURL := base64.RawURLEncoding.EncodeToString(randomBytes)
-	return shortURL, nil
-}
-
 // Derive lookup key from short URL using tagged SHA-256
 func deriveLookupKey(shortURL string) string {
 	hash := sha256.Sum256([]byte("lookup-key" + shortURL))
@@ -163,6 +148,56 @@ func indexHandler(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Add this function to handle URL shortening with collision detection
+func createShortURL(longURL string) (string, error) {
+	const maxAttempts = 5 // Reasonable limit for retry attempts
+
+	for range maxAttempts {
+		// Generate a short URL with 6 random bytes (48 bits of entropy)
+		// which results in 8 base64 characters
+		randomBytes := make([]byte, 6)
+		_, err := rand.Read(randomBytes)
+		if err != nil {
+			return "", err
+		}
+
+		// Encode to URL-safe base64
+		shortURL := base64.RawURLEncoding.EncodeToString(randomBytes)
+
+		// Derive lookup key and encryption key
+		lookupKey := deriveLookupKey(shortURL)
+		encryptionKey := deriveEncryptionKey(shortURL)
+
+		// Encrypt the long URL
+		encryptedURL, err := encryptURL(longURL, encryptionKey)
+		if err != nil {
+			return "", fmt.Errorf("error encrypting URL: %w", err)
+		}
+
+		// Attempt to store in database
+		now := time.Now()
+		_, err = db.Exec("INSERT INTO urls (lookup_key, encrypted_url, created_at) VALUES (?, ?, ?)",
+			lookupKey, encryptedURL, now)
+
+		if err == nil {
+			return shortURL, nil // Success
+		}
+
+		// Check if this is a unique constraint violation
+		if strings.Contains(err.Error(), "UNIQUE constraint failed") {
+			// This is a VERY RARE collision, try again with new random values
+			log.Printf("WARNING: ID collision occured (ID space to small?)\n")
+			continue
+		}
+
+		// For any other error, return it immediately
+		return "", fmt.Errorf("error storing URL: %w", err)
+	}
+
+	// If we get here, we've exceeded our retry attempts
+	return "", errors.New("exceeded retry attempts due to key collisions")
+}
+
 // Handler for creating a short URL
 func shortenHandler(w http.ResponseWriter, r *http.Request) {
 	// Get the long URL from the form
@@ -207,33 +242,10 @@ func shortenHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Generate a short URL
-	shortURL, err := generateShortURL()
+	shortURL, err := createShortURL(longURL)
 	if err != nil {
-		http.Error(w, "Error generating short URL", http.StatusInternalServerError)
-		log.Printf("Error generating short URL: %v", err)
-		return
-	}
-
-	// Derive lookup key and encryption key
-	lookupKey := deriveLookupKey(shortURL)
-	encryptionKey := deriveEncryptionKey(shortURL)
-
-	// Encrypt the long URL
-	encryptedURL, err := encryptURL(longURL, encryptionKey)
-	if err != nil {
-		http.Error(w, "Error encrypting URL", http.StatusInternalServerError)
-		log.Printf("Error encrypting URL: %v", err)
-		return
-	}
-
-	// Store in database with creation timestamp
-	now := time.Now()
-	_, err = db.Exec("INSERT INTO urls (lookup_key, encrypted_url, created_at) VALUES (?, ?, ?)",
-		lookupKey, encryptedURL, now)
-	if err != nil {
-		http.Error(w, "Error storing URL", http.StatusInternalServerError)
-		log.Printf("Error storing URL: %v", err)
+		http.Error(w, "Error creating short URL", http.StatusInternalServerError)
+		log.Printf("Error creating short URL: %v", err)
 		return
 	}
 
